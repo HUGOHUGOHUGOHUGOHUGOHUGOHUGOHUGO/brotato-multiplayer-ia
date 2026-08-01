@@ -53,7 +53,31 @@ gerar a dela).
 internet, alguém precisa estar com o servidor **rodando** (veja a seção
 abaixo) — o GitHub não roda nada sozinho, só guarda os arquivos.
 
-## Jogando com amigos pela internet
+## Landing page (site de apresentação)
+
+Tem uma página de apresentação em `site/index.html` — separada do jogo em si,
+serve pra ter um link bonito pra divulgar antes de mandar as pessoas pro
+lobby. Ela é 100% estática (HTML/CSS/JS puro), então dá pra hospedar de graça
+no **GitHub Pages** (o jogo em si continua precisando do Render/Railway, como
+explicado acima, porque tem servidor).
+
+**Antes de publicar**, edite `site/index.html` e troque:
+- `SEU-USUARIO` (2 lugares) pelo seu usuário do GitHub
+- `SEU-JOGO.onrender.com` pela URL real do seu servidor rodando (a que o
+  Render te deu)
+
+**Publicando no GitHub Pages:**
+1. Suba o projeto pro GitHub normalmente (seção acima).
+2. No repositório, vá em **Settings → Pages**.
+3. Em "Source", escolha **Deploy from a branch**.
+4. Branch: `main`, pasta: **`/site`** (não a raiz — é onde a landing page está).
+5. Salve. Em ~1 minuto o GitHub te dá uma URL tipo
+   `https://seu-usuario.github.io/brotato-multiplayer/`.
+
+Essa URL é só a vitrine; o botão "JOGAR AGORA" nela leva pro jogo de verdade,
+hospedado no Render.
+
+
 
 O GitHub guarda o **código**, mas não deixa o servidor rodando 24/7 (GitHub
 Pages só serve arquivos estáticos, sem WebSocket/Node). Duas opções simples:
