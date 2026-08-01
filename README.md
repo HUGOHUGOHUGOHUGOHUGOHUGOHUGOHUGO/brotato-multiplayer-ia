@@ -55,13 +55,13 @@ abaixo) — o GitHub não roda nada sozinho, só guarda os arquivos.
 
 ## Landing page (site de apresentação)
 
-Tem uma página de apresentação em `site/index.html` — separada do jogo em si,
+Tem uma página de apresentação em `docs/index.html` — separada do jogo em si,
 serve pra ter um link bonito pra divulgar antes de mandar as pessoas pro
 lobby. Ela é 100% estática (HTML/CSS/JS puro), então dá pra hospedar de graça
 no **GitHub Pages** (o jogo em si continua precisando do Render/Railway, como
 explicado acima, porque tem servidor).
 
-**Antes de publicar**, edite `site/index.html` e troque:
+**Antes de publicar**, edite `docs/index.html` e troque:
 - `SEU-USUARIO` (2 lugares) pelo seu usuário do GitHub
 - `SEU-JOGO.onrender.com` pela URL real do seu servidor rodando (a que o
   Render te deu)
@@ -70,7 +70,7 @@ explicado acima, porque tem servidor).
 1. Suba o projeto pro GitHub normalmente (seção acima).
 2. No repositório, vá em **Settings → Pages**.
 3. Em "Source", escolha **Deploy from a branch**.
-4. Branch: `main`, pasta: **`/site`** (não a raiz — é onde a landing page está).
+4. Branch: `main`, pasta: **`/docs`** (não a raiz — é onde a landing page está).
 5. Salve. Em ~1 minuto o GitHub te dá uma URL tipo
    `https://seu-usuario.github.io/brotato-multiplayer/`.
 
