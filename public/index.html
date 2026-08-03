@@ -2,50 +2,207 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Brotato-like Online</title>
 <style>
   html, body {
     margin: 0; padding: 0; background: #14161c; color: #eee;
-    font-family: 'Segoe UI', Arial, sans-serif; overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    /* sem overflow travado: a página precisa poder rolar normalmente,
+       inclusive dentro de navegadores in-app (WhatsApp/TikTok/Instagram) */
   }
-  #wrap { display: flex; flex-direction: column; align-items: center; padding: 24px; }
-  h1 { font-size: 20px; margin: 0 0 20px; color: #ffd75d; letter-spacing: 1px; }
+  * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+  #wrap { display: flex; flex-direction: column; align-items: center; padding: 16px 16px 48px; }
+  h1 { font-size: 18px; margin: 0 0 16px; color: #ffd75d; letter-spacing: 1px; text-align: center; }
 
   /* ---- Lobby ---- */
   #lobby {
-    background: #1c2029; border: 2px solid #3a3f4f; border-radius: 12px;
-    padding: 28px 32px; width: 320px; display: flex; flex-direction: column; gap: 16px;
+    background: linear-gradient(160deg, #1f2430 0%, #191d26 60%, #1c2029 100%);
+    border: 2px solid #3a3f4f; border-radius: 12px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), inset 0 -12px 24px rgba(0,0,0,0.18);
+    padding: 24px; width: min(380px, 92vw);
+    display: flex; flex-direction: column; gap: 16px;
   }
-  #lobby label { font-size: 12px; color: #999; display: block; margin-bottom: 4px; }
+  #lobby label { font-size: 12px; color: #999; display: block; margin-bottom: 6px; }
   #lobby input {
-    width: 100%; box-sizing: border-box; padding: 10px; border-radius: 6px;
-    border: 1px solid #3a3f4f; background: #14161c; color: #eee; font-size: 14px;
+    width: 100%; padding: 12px; border-radius: 6px;
+    border: 1px solid #3a3f4f; background: #14161c; color: #eee; font-size: 16px;
   }
   #roomInput { text-transform: uppercase; letter-spacing: 3px; text-align: center; font-weight: bold; }
   .lobby-section { border-top: 1px solid #2a2f3d; padding-top: 16px; }
   .lobby-section:first-of-type { border-top: none; padding-top: 0; }
   button {
-    cursor: pointer; border: none; border-radius: 6px; padding: 11px;
-    font-size: 14px; font-weight: bold; width: 100%;
+    cursor: pointer; border: none; border-radius: 6px; padding: 13px;
+    font-size: 14px; font-weight: bold; width: 100%; touch-action: manipulation;
   }
   #createBtn { background: #ffd75d; color: #14161c; }
-  #createBtn:hover { background: #ffe08a; }
   #joinBtn { background: #5dd8ff; color: #14161c; margin-top: 8px; }
-  #joinBtn:hover { background: #8ae5ff; }
   #lobbyMsg { font-size: 12px; color: #ff8d8d; min-height: 16px; }
   #lobbyStatus { font-size: 11px; color: #666; }
 
+  .classGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .classCard {
+    border: 2px solid #3a3f4f; border-radius: 8px; padding: 10px; cursor: pointer;
+    background: linear-gradient(160deg, #171a22 0%, #14161c 100%); touch-action: manipulation;
+  }
+  .classCard.selected { border-color: #ffd75d; background: #23241a; }
+  .classCard .cname { font-size: 12.5px; font-weight: bold; color: #eee; margin-bottom: 3px; }
+  .classCard .cdesc { font-size: 10.5px; color: #8992a4; line-height: 1.3; }
+
+  .visToggle { display: flex; gap: 8px; margin-bottom: 10px; }
+  .visBtn {
+    flex: 1; padding: 10px; border-radius: 6px; border: 2px solid #3a3f4f;
+    background: #14161c; color: #999; font-size: 12.5px; font-weight: bold;
+  }
+  .visBtn.selected { border-color: #5dd8ff; color: #5dd8ff; background: #10222b; }
+  #manualHint { font-size: 11px; color: #666; margin-top: 8px; }
+
+  #loginToggleLink { font-size: 11px; color: #666; margin-top: 8px; cursor: pointer; text-decoration: underline; }
+  #adminFields input { margin-top: 8px; }
+
+  #adminPanel {
+    width: 100%; max-width: 900px; background: #1c2029; border: 2px solid #3a3f4f;
+    border-radius: 10px; padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .adminRow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .adminRow select {
+    flex: 1; min-width: 120px; padding: 8px; border-radius: 6px; border: 1px solid #3a3f4f;
+    background: #14161c; color: #eee; font-size: 12px;
+  }
+  .adminRow button { width: auto; padding: 8px 14px; font-size: 12px; background: #ff2fd0; color: #14161c; }
+  .adminDebugToggle { font-size: 12px; color: #ccc; display: flex; align-items: center; gap: 6px; }
+
+  #debugOverlay {
+    width: 100%; max-width: 900px; background: #0c0d11; border: 1px solid #2a2f3d; border-radius: 8px;
+    padding: 8px 12px; margin-top: 8px; font-size: 11px; color: #8dff5d; font-family: monospace;
+    white-space: pre-wrap;
+  }
+
+  #weaponBadge {
+    background: #2a2f3d; padding: 4px 10px; border-radius: 6px; font-size: 11px;
+    color: #ffd75d; font-weight: bold;
+  }
+
+  /* botão de ataque manual (mobile) */
+  #attackBtn {
+    display: none; width: 74px; height: 74px; border-radius: 50%; background: rgba(255,93,93,0.25);
+    border: 2px solid rgba(255,93,93,0.6); color: #ff9d9d; font-size: 11px; font-weight: bold;
+    touch-action: manipulation; user-select: none;
+  }
+
+  /* foto do jogador */
+  .avatarRow { display: flex; align-items: center; gap: 14px; }
+  #avatarPreview {
+    width: 56px; height: 56px; border-radius: 50%; background: #14161c;
+    border: 2px solid #3a3f4f; background-size: cover; background-position: center;
+    flex-shrink: 0;
+  }
+  .avatarButtons { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .fileBtn, .clearBtn {
+    display: block; text-align: center; padding: 9px; border-radius: 6px;
+    font-size: 12px; font-weight: bold; cursor: pointer; touch-action: manipulation;
+  }
+  .fileBtn { background: #2a2f3d; color: #eee; }
+  .clearBtn { background: transparent; border: 1px solid #3a3f4f; color: #999; width: 100%; }
+
+  /* lista de salas públicas — SEM scroll interno (evita capturar o gesto de
+     rolagem da página inteira em navegadores in-app problemáticos) */
+  #roomListSection { display: flex; flex-direction: column; gap: 8px; }
+  #roomListHead { display: flex; justify-content: space-between; align-items: center; }
+  #refreshBtn { width: auto; padding: 6px 12px; font-size: 11px; background: #2a2f3d; color: #ccc; }
+  #roomList { display: flex; flex-direction: column; gap: 6px; }
+  .roomRow {
+    display: flex; justify-content: space-between; align-items: center;
+    background: #14161c; border: 1px solid #2a2f3d; border-radius: 6px; padding: 10px 12px;
+    font-size: 12px;
+  }
+  .roomRow .rInfo { color: #ccc; }
+  .roomRow .rCode { color: #5dd8ff; font-weight: bold; letter-spacing: 2px; }
+  .roomRow button { width: auto; padding: 8px 16px; font-size: 11px; background: #ffd75d; color: #14161c; }
+  #roomListEmpty { font-size: 11.5px; color: #666; text-align: center; padding: 8px 0; }
+
   /* ---- Game ---- */
-  #gameScreen { display: none; flex-direction: column; align-items: center; }
-  #hud { display: flex; gap: 20px; margin-bottom: 8px; font-size: 13px; flex-wrap: wrap; justify-content: center; }
+  #gameScreen { display: none; flex-direction: column; align-items: center; width: 100%; max-width: 900px; }
+  #hud { display: flex; gap: 10px; margin-bottom: 8px; font-size: 12px; flex-wrap: wrap; justify-content: center; align-items: center; }
   #hud span { color: #ffd75d; font-weight: bold; }
   #roomBadge {
-    background: #2a2f3d; padding: 4px 10px; border-radius: 6px; font-size: 12px;
+    background: #2a2f3d; padding: 4px 10px; border-radius: 6px; font-size: 11px;
     letter-spacing: 2px; color: #5dd8ff; font-weight: bold;
   }
-  canvas { background: #202430; border: 2px solid #3a3f4f; border-radius: 8px; }
+  #hud button { width: auto; padding: 6px 14px; font-size: 11px; }
+  #leaveBtn { background: #ff5d5d; color: #14161c; }
+  #chatToggleBtn { background: #2a2f3d; color: #ccc; }
+  .canvas-wrap { position: relative; width: 100%; max-width: 900px; }
+  canvas {
+    background: #202430; border: 2px solid #3a3f4f; border-radius: 8px;
+    width: 100%; height: auto; display: block; touch-action: none;
+  }
   #status { margin-top: 8px; font-size: 12px; color: #888; }
-  #help { margin-top: 6px; font-size: 12px; color: #666; }
+  #scoreboard {
+    margin-top: 8px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+    font-size: 11.5px; color: #ccc;
+  }
+  #scoreboard .scoreItem { background: #1c2029; border: 1px solid #2a2f3d; border-radius: 6px; padding: 4px 10px; }
+  #scoreboard .scoreItem b { color: #ffd75d; }
+  #help { margin-top: 6px; font-size: 11px; color: #666; text-align: center; }
+
+  /* ---- Chat ---- */
+  #chatPanel {
+    display: none; width: 100%; max-width: 900px; margin-top: 14px;
+    background: #1c2029; border: 2px solid #3a3f4f; border-radius: 10px; overflow: hidden;
+  }
+  #chatPanel.open { display: flex; flex-direction: column; }
+  #chatMessages { max-height: 160px; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .chatLine { font-size: 12.5px; line-height: 1.4; word-break: break-word; }
+  .chatLine .chatName { font-weight: bold; margin-right: 4px; }
+  .chatLine.system { color: #666; font-style: italic; }
+  #chatInputRow { display: flex; border-top: 1px solid #2a2f3d; }
+  #chatInput {
+    flex: 1; border: none; background: #14161c; color: #eee; padding: 12px;
+    font-size: 16px; outline: none;
+  }
+  #chatSendBtn { width: auto; border-radius: 0; background: #5dd8ff; color: #14161c; padding: 12px 18px; }
+
+  /* ---- Controles mobile: ocupam o espaço ABAIXO do jogo ---- */
+  #mobileControls {
+    display: none; width: 100%; justify-content: center; align-items: center;
+    margin-top: 18px; padding: 10px 0 10px;
+  }
+  @media (pointer: coarse) {
+    #mobileControls { display: flex; }
+  }
+  #joystick {
+    position: relative; width: 130px; height: 130px; border-radius: 50%;
+    background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.18);
+    touch-action: none;
+  }
+  #joystickKnob {
+    position: absolute; left: 50%; top: 50%; width: 54px; height: 54px;
+    margin-left: -27px; margin-top: -27px; border-radius: 50%;
+    background: rgba(255,215,93,0.85); border: 2px solid #ffd75d;
+  }
+  #joystickHint { text-align: center; font-size: 10.5px; color: #666; margin-top: 8px; }
+
+  /* ---- Loja entre rodadas ---- */
+  #shopOverlay {
+    display: none; position: absolute; inset: 0; background: rgba(10,11,15,0.92);
+    border-radius: 8px; flex-direction: column; align-items: center; justify-content: center;
+    padding: 20px; text-align: center; z-index: 5;
+  }
+  #shopOverlay.active { display: flex; }
+  #shopOverlay h2 { color: #ffd75d; font-size: 15px; margin: 0 0 4px; letter-spacing: 1px; }
+  #shopOverlay .shopSub { color: #8992a4; font-size: 12px; margin-bottom: 18px; }
+  #shopOptions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; max-width: 640px; }
+  .shopCard {
+    background: linear-gradient(160deg, #22262f 0%, #1c2029 100%);
+    border: 2px solid #3a3f4f; border-radius: 10px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    padding: 14px; width: 145px; cursor: pointer; touch-action: manipulation;
+  }
+  .shopCard:hover, .shopCard:active { border-color: #ffd75d; }
+  .shopCard .label { color: #ffd75d; font-weight: bold; font-size: 12.5px; margin-bottom: 6px; }
+  .shopCard .desc { color: #8992a4; font-size: 10.5px; }
+  #shopWaiting { color: #5dd8ff; font-size: 13px; margin-top: 16px; }
 </style>
 </head>
 <body>
@@ -56,9 +213,51 @@
     <div class="lobby-section">
       <label for="nameInput">Seu nome (opcional)</label>
       <input id="nameInput" maxlength="16" placeholder="Ex: Zé">
+      <div id="loginToggleLink">🔑 Sou administrador</div>
+      <div id="adminFields" style="display:none">
+        <input id="adminUser" placeholder="Usuário" style="margin-top:8px">
+        <input id="adminPass" type="password" placeholder="Senha" style="margin-top:8px">
+      </div>
     </div>
 
     <div class="lobby-section">
+      <label>Foto do personagem (opcional)</label>
+      <div class="avatarRow">
+        <div id="avatarPreview"></div>
+        <div class="avatarButtons">
+          <label class="fileBtn" for="avatarInput">Escolher foto</label>
+          <input type="file" id="avatarInput" accept="image/*" style="display:none">
+          <button type="button" id="avatarClearBtn" class="clearBtn">Remover</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="lobby-section">
+      <label>Escolha sua classe</label>
+      <div class="classGrid" id="classGrid"></div>
+    </div>
+
+    <div class="lobby-section">
+      <label>Arma</label>
+      <div class="visToggle">
+        <button type="button" class="visBtn selected" id="weaponPistol">🔫 Pistola</button>
+        <button type="button" class="visBtn" id="weaponMelee">🗡️ Espada</button>
+        <button type="button" class="visBtn" id="weaponBoth">⚔️ Ambas</button>
+      </div>
+      <label style="margin-top:10px">Modo de ataque</label>
+      <div class="visToggle">
+        <button type="button" class="visBtn selected" id="modeAuto">🎯 Automático</button>
+        <button type="button" class="visBtn" id="modeManual">👆 Manual</button>
+      </div>
+      <div id="manualHint" style="display:none">Segure ESPAÇO (PC) ou o botão ATACAR (celular) pra atacar.</div>
+    </div>
+
+    <div class="lobby-section">
+      <label>Tipo de sala</label>
+      <div class="visToggle">
+        <button type="button" class="visBtn selected" id="visPrivate">🔒 Privada</button>
+        <button type="button" class="visBtn" id="visPublic">🌐 Pública</button>
+      </div>
       <button id="createBtn">Criar sala nova</button>
     </div>
 
@@ -68,6 +267,15 @@
       <button id="joinBtn">Entrar na sala</button>
     </div>
 
+    <div class="lobby-section" id="roomListSection">
+      <div id="roomListHead">
+        <label style="margin:0">Salas públicas abertas</label>
+        <button type="button" id="refreshBtn">↻ Atualizar</button>
+      </div>
+      <div id="roomList"></div>
+      <div id="roomListEmpty">Nenhuma sala pública no momento.</div>
+    </div>
+
     <div id="lobbyMsg"></div>
     <div id="lobbyStatus">Conectando ao servidor...</div>
   </div>
@@ -75,15 +283,65 @@
   <div id="gameScreen">
     <div id="hud">
       <div id="roomBadge">SALA: <span id="roomCode">----</span></div>
+      <div id="weaponBadge">🔫 Pistola</div>
       <div>Onda: <span id="wave">0</span></div>
-      <div>Próxima onda em: <span id="waveTimer">--</span>s</div>
+      <div>Próxima: <span id="waveTimer">--</span>s</div>
       <div>Jogadores: <span id="playerCount">0</span></div>
+      <button id="chatToggleBtn">💬 Chat</button>
+      <button id="leaveBtn">Sair da sala</button>
     </div>
-    <canvas id="game" width="900" height="600"></canvas>
+    <div id="adminPanel" style="display:none">
+      <div class="adminRow">
+        <select id="adminEnemyType">
+          <option value="normal">Normal</option>
+          <option value="fast">Rápido</option>
+          <option value="swarm">Enxame</option>
+          <option value="tank">Tanque</option>
+          <option value="boss">CHEFE</option>
+        </select>
+        <button id="adminSpawnBtn" type="button">Spawnar</button>
+      </div>
+      <div class="adminRow">
+        <select id="adminUpgradeSelect"></select>
+        <button id="adminUpgradeBtn" type="button">Aplicar em mim</button>
+      </div>
+      <div class="adminRow">
+        <button id="adminSkipBtn" type="button">⏭️ Pular fase</button>
+        <label class="adminDebugToggle"><input type="checkbox" id="adminDebugToggle"> Debug</label>
+      </div>
+    </div>
+    <div id="debugOverlay" style="display:none"></div>
+    <div class="canvas-wrap">
+      <canvas id="game" width="900" height="600"></canvas>
+      <div id="shopOverlay">
+        <h2>LOJA — ESCOLHA UM UPGRADE</h2>
+        <div class="shopSub">Próxima onda em <span id="shopTimer">--</span>s</div>
+        <div id="shopOptions"></div>
+        <div id="shopWaiting"></div>
+      </div>
+    </div>
     <div id="status"></div>
-    <div id="help">Mover: WASD ou setas · Ataque automático (pistola + espada) · Compartilhe o código da sala com seus amigos</div>
+    <div id="scoreboard"></div>
+    <div id="help">PC: WASD/setas move · Ataque automático</div>
+
+    <div id="chatPanel">
+      <div id="chatMessages"></div>
+      <div id="chatInputRow">
+        <input id="chatInput" maxlength="200" placeholder="Mensagem para a sala...">
+        <button id="chatSendBtn">Enviar</button>
+      </div>
+    </div>
+
+    <div id="mobileControls">
+      <div>
+        <div id="joystick"><div id="joystickKnob"></div></div>
+        <div id="joystickHint">arraste pra mover</div>
+      </div>
+      <button id="attackBtn" style="margin-left:28px">ATACAR</button>
+    </div>
   </div>
 </div>
+<script src="engine.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

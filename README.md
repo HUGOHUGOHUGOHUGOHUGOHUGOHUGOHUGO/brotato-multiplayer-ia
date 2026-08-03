@@ -108,22 +108,86 @@ estático. Você ainda pode manter o repositório no GitHub normalmente, só o
 - Ataque: automático (pistola dispara no inimigo mais próximo, espada bate em
   área ao redor do personagem)
 
+## Arquitetura: salas públicas vs privadas (importante!)
+
+- **Sala pública**: o jogo roda no servidor (Render), como sempre. Todo mundo
+  se conecta nele.
+- **Sala privada**: quem **cria** a sala vira o "servidor" dela — o jogo roda
+  no navegador dessa pessoa, e quem entra conecta **direto** com o PC dela via
+  WebRTC (P2P), sem passar o tempo todo pelo servidor na nuvem. O servidor só
+  ajuda os dois PCs a se acharem no início (isso é tecnicamente inevitável —
+  navegador nenhum acha o outro sozinho).
+
+  **Limitações importantes do modo P2P**, pra você saber o que esperar:
+  - Quem criou a sala precisa **manter a aba aberta** — se ela fechar, a sala
+    acaba pra todo mundo.
+  - A internet e o PC de quem criou viram o "gargalo" da sala inteira.
+  - Não tem servidor de reforço (TURN) — em redes muito restritas (algumas
+    redes corporativas, certas operadoras de celular) a conexão direta pode
+    falhar. Não tem fallback automático pra sala pública nesse caso; se isso
+    acontecer, o jeito é usar sala pública mesmo.
+  - **Isso não foi testado em dispositivos reais** — a lógica de sinalização
+    (o "correio" que ajuda os PCs se acharem) foi testada de ponta a ponta,
+    mas a conexão WebRTC de verdade entre dois navegadores/redes diferentes
+    só dá pra confirmar testando ao vivo.
+
 ## O que já tem (protótipo)
 
 - Multiplayer real via WebSocket, servidor autoritativo
 - Tela de lobby: criar sala (gera código) ou entrar com código de 4 caracteres
-- Várias salas simultâneas e isoladas no mesmo servidor
-- Ondas de inimigos crescentes, spawnando nas bordas do mapa
+- **Salas públicas e privadas**: crie uma sala privada (só quem tem o código
+  entra) ou pública (aparece numa lista pra qualquer um encontrar e entrar,
+  sem precisar do código)
+- **4 classes de personagem**: Soldado (equilibrado), Berserker (espada forte,
+  menos vida), Tanque (muita vida, mais lento), Ninja (rápido, menos vida)
+- **Botão de sair da sala**, volta pro lobby sem precisar recarregar a página
+- Ondas de inimigos crescentes, com um segundo tipo de inimigo ("rápido",
+  menor e mais ágil) aparecendo a partir da onda 4
+- **Balanceamento por número de jogadores**: a quantidade de inimigos por onda
+  escala com quantas pessoas estão na sala, não só com o número da onda
+- **Loja entre rodadas** com 8 upgrades possíveis: vida, dano, velocidade de
+  ataque, velocidade de movimento, raio da espada, alcance da pistola,
+  regeneração de vida e balas perfurantes
 - 2 armas automáticas (pistola + espada em área)
 - Vida, respawn após 3s ao morrer
-- Sincronização de todos os jogadores da mesma sala
+- **Suporte a celular**: layout responsivo e joystick virtual — no celular ele
+  fica numa área dedicada *abaixo* da tela do jogo (não sobrepõe a arena),
+  aparece só em telas de toque
+- **Chat da sala**: painel visível por padrão ao entrar (dá pra
+  recolher/expandir pelo botão "💬 Chat"), com mensagens automáticas de
+  sistema (entrada/saída de jogadores, nova onda, abertura da loja)
+- **Placar de abates**: contador de inimigos derrotados por jogador, exibido
+  junto ao nome na arena e num placar logo abaixo dela
+- **Onda acaba na hora** se todos os inimigos forem derrotados, sem precisar
+  esperar o minuto todo
+- **Escolha de arma**: Pistola, Espada ou Ambas — aparece um ícone da arma
+  equipada junto ao personagem na arena
+- **Modo de ataque**: Automático (ataca sozinho) ou Manual (segurar ESPAÇO no
+  PC ou o botão ATACAR no celular)
+- **8 classes**: Soldado, Berserker, Tanque, Ninja, Atirador, Vampiro,
+  Duelista (bônus equilibrado, ótimo com "Ambas") e Mercenário (generalista)
+- **Login de administrador** (opcional, link "🔑 Sou administrador" no lobby)
+  com painel pra spawnar inimigos (inclusive chefes), aplicar upgrades em si
+  mesmo e pular fase — *aviso: como o jogo roda no navegador, a senha fica
+  visível pra quem olhar o código-fonte; não é segurança de verdade, é mais
+  um "código de cheat" pro seu uso pessoal*
+- **Modo debug** (dentro do painel de admin): mostra FPS, contagem de
+  inimigos/balas/jogadores e seus próprios stats em tempo real
+- **Sons** sintetizados (sem arquivos externos) pra tiro, acerto, abate, dano
+  recebido, nova onda, chefe aparecendo e loja abrindo
+- **Foto do personagem (skin)**: no lobby, dá pra escolher uma imagem da
+  galeria/câmera do celular (ou arquivo no PC) — ela é redimensionada
+  automaticamente e aparece dentro da bolinha do seu personagem pra todo
+  mundo na sala ver. Sem foto, continua a cor padrão.
+- **Números de dano flutuantes** ao acertar os inimigos
+- Onda dura até **1 minuto** (ou menos, se limpar tudo antes)
 
 ## Ideias pra evoluir depois
 
-- Loja entre ondas (comprar armas/upgrades, como no Brotato original)
 - Mais tipos de arma e itens passivos
-- XP e level up
-- Diferentes personagens/classes
-- Salas (várias partidas simultâneas) em vez de uma arena global
+- XP e level up separado dos upgrades de loja
+- Mais classes / skins visuais por classe
 - Interpolação de movimento no cliente para deixar mais suave em conexões
   ruins
+- Senha opcional pra salas privadas (hoje "privada" só significa "não aparece
+  na lista pública" — quem tem o código sempre consegue entrar)

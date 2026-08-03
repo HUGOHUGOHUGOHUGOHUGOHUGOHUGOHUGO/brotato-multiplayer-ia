@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const { WebSocketServer } = require('ws');
+const { createEngine, TICK_MS } = require('./engine');
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
@@ -9,232 +10,86 @@ app.use(express.static(path.join(__dirname, 'public')));
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-// ---------- Config ----------
-const ARENA_W = 900;
-const ARENA_H = 600;
-const TICK_MS = 50; // 20 ticks/s
-const PLAYER_SPEED = 3.2;
-const PLAYER_RADIUS = 14;
-const PLAYER_MAX_HP = 100;
-const RESPAWN_MS = 3000;
+const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem 0/O/1/I
+const SYSTEM_COLOR = '#8992a4';
 
-const ENEMY_RADIUS = 12;
-const ENEMY_SPEED = 1.1;
-const ENEMY_CONTACT_DMG = 8;
-const ENEMY_CONTACT_COOLDOWN = 600;
-
-const WAVE_INTERVAL_MS = 15000;
-
-const PISTOL_COOLDOWN = 450;
-const PISTOL_DMG = 8;
-const PISTOL_RANGE = 420;
-const BULLET_SPEED = 7;
-const BULLET_RADIUS = 4;
-
-const MELEE_COOLDOWN = 900;
-const MELEE_DMG = 16;
-const MELEE_RADIUS = 55;
-
-const COLORS = ['#ff5d5d', '#5dd8ff', '#8dff5d', '#ffd75d', '#c07dff', '#ff9d5d'];
-const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem 0/O/1/I pra evitar confusão
-
-// ---------- Rooms ----------
-// rooms[code] = { players, enemies, bullets, wave, waveTimer, enemyIdCounter, bulletIdCounter, colorIdx }
+// rooms[code] = { isPublic, engine } — salas com jogo rodando NO SERVIDOR (sempre públicas hoje)
 const rooms = {};
+// p2pRooms[code] = { hostWs } — salas privadas: servidor só ajuda os PCs se acharem (sinalização),
+// quem roda o jogo de verdade é o navegador de quem criou a sala.
+const p2pRooms = {};
 
-function generateRoomCode() {
+function generateRoomCode(registry) {
   let code;
   do {
     code = Array.from({ length: 4 }, () => ROOM_CODE_CHARS[Math.floor(Math.random() * ROOM_CODE_CHARS.length)]).join('');
-  } while (rooms[code]);
+  } while (rooms[code] || p2pRooms[code]);
   return code;
 }
 
-function createRoom() {
-  return {
-    players: {},
-    enemies: [],
-    bullets: [],
-    wave: 0,
-    waveTimer: 0,
-    enemyIdCounter: 0,
-    bulletIdCounter: 0,
-    colorIdx: 0,
-  };
-}
-
-function randEdgePosition() {
-  const side = Math.floor(Math.random() * 4);
-  if (side === 0) return { x: Math.random() * ARENA_W, y: -20 };
-  if (side === 1) return { x: Math.random() * ARENA_W, y: ARENA_H + 20 };
-  if (side === 2) return { x: -20, y: Math.random() * ARENA_H };
-  return { x: ARENA_W + 20, y: Math.random() * ARENA_H };
-}
-
-function spawnWave(room) {
-  room.wave += 1;
-  const count = 3 + room.wave * 2;
-  const hp = 20 + room.wave * 6;
-  for (let i = 0; i < count; i++) {
-    const pos = randEdgePosition();
-    room.enemyIdCounter += 1;
-    room.enemies.push({ id: room.enemyIdCounter, x: pos.x, y: pos.y, hp, maxHp: hp, lastContact: 0 });
-  }
-  room.waveTimer = WAVE_INTERVAL_MS;
-}
-
-function nearestEnemy(room, x, y, maxRange) {
-  let best = null, bestDist = Infinity;
-  for (const e of room.enemies) {
-    const d = Math.hypot(e.x - x, e.y - y);
-    if (d < bestDist && (!maxRange || d <= maxRange)) { bestDist = d; best = e; }
-  }
-  return best;
-}
-
-function alivePlayers(room) {
-  return Object.values(room.players).filter((p) => p.alive);
-}
-
-function nearestPlayer(room, x, y) {
-  let best = null, bestDist = Infinity;
-  for (const p of alivePlayers(room)) {
-    const d = Math.hypot(p.x - x, p.y - y);
-    if (d < bestDist) { bestDist = d; best = p; }
-  }
-  return best;
-}
-
-function tickRoom(room, code) {
-  const now = Date.now();
-
-  room.waveTimer -= TICK_MS;
-  if (room.waveTimer <= 0) spawnWave(room);
-
-  for (const p of Object.values(room.players)) {
-    if (!p.alive) {
-      if (now >= p.respawnAt) {
-        p.alive = true;
-        p.hp = PLAYER_MAX_HP;
-        p.x = ARENA_W / 2 + (Math.random() - 0.5) * 100;
-        p.y = ARENA_H / 2 + (Math.random() - 0.5) * 100;
-      }
-      continue;
-    }
-
-    let dx = 0, dy = 0;
-    if (p.input.up) dy -= 1;
-    if (p.input.down) dy += 1;
-    if (p.input.left) dx -= 1;
-    if (p.input.right) dx += 1;
-    if (dx !== 0 || dy !== 0) {
-      const len = Math.hypot(dx, dy);
-      p.x += (dx / len) * PLAYER_SPEED;
-      p.y += (dy / len) * PLAYER_SPEED;
-      p.x = Math.max(PLAYER_RADIUS, Math.min(ARENA_W - PLAYER_RADIUS, p.x));
-      p.y = Math.max(PLAYER_RADIUS, Math.min(ARENA_H - PLAYER_RADIUS, p.y));
-    }
-
-    if (now - p.lastShot >= PISTOL_COOLDOWN) {
-      const target = nearestEnemy(room, p.x, p.y, PISTOL_RANGE);
-      if (target) {
-        const ang = Math.atan2(target.y - p.y, target.x - p.x);
-        room.bulletIdCounter += 1;
-        room.bullets.push({
-          id: room.bulletIdCounter, x: p.x, y: p.y,
-          vx: Math.cos(ang) * BULLET_SPEED, vy: Math.sin(ang) * BULLET_SPEED, owner: p.id,
-        });
-        p.lastShot = now;
-      }
-    }
-
-    if (now - p.lastMelee >= MELEE_COOLDOWN) {
-      let hit = false;
-      for (const e of room.enemies) {
-        if (Math.hypot(e.x - p.x, e.y - p.y) <= MELEE_RADIUS) { e.hp -= MELEE_DMG; hit = true; }
-      }
-      if (hit) p.lastMelee = now;
-    }
-  }
-
-  room.bullets = room.bullets.filter((b) => {
-    b.x += b.vx; b.y += b.vy;
-    if (b.x < 0 || b.x > ARENA_W || b.y < 0 || b.y > ARENA_H) return false;
-    for (const e of room.enemies) {
-      if (Math.hypot(e.x - b.x, e.y - b.y) <= ENEMY_RADIUS + BULLET_RADIUS) {
-        e.hp -= PISTOL_DMG;
-        return false;
-      }
-    }
-    return true;
-  });
-
-  for (const e of room.enemies) {
-    const target = nearestPlayer(room, e.x, e.y);
-    if (target) {
-      const ang = Math.atan2(target.y - e.y, target.x - e.x);
-      e.x += Math.cos(ang) * ENEMY_SPEED;
-      e.y += Math.sin(ang) * ENEMY_SPEED;
-      const d = Math.hypot(target.x - e.x, target.y - e.y);
-      if (d <= PLAYER_RADIUS + ENEMY_RADIUS && now - e.lastContact >= ENEMY_CONTACT_COOLDOWN) {
-        target.hp -= ENEMY_CONTACT_DMG;
-        e.lastContact = now;
-        if (target.hp <= 0) { target.alive = false; target.respawnAt = now + RESPAWN_MS; }
-      }
-    }
-  }
-
-  room.enemies = room.enemies.filter((e) => e.hp > 0);
-
-  broadcastRoom(room, code);
-}
-
-function broadcastRoom(room, code) {
-  const state = {
-    type: 'state',
-    room: code,
-    wave: room.wave,
-    waveTimeLeft: Math.max(0, room.waveTimer),
-    arena: { w: ARENA_W, h: ARENA_H },
-    players: Object.values(room.players).map((p) => ({
-      id: p.id, x: p.x, y: p.y, hp: p.hp, maxHp: PLAYER_MAX_HP,
-      color: p.color, name: p.name, alive: p.alive,
-    })),
-    enemies: room.enemies.map((e) => ({ id: e.id, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp })),
-    bullets: room.bullets.map((b) => ({ id: b.id, x: b.x, y: b.y })),
-  };
-  const msg = JSON.stringify(state);
+// ---------- Chat / sistema (salas públicas) ----------
+function broadcastToRoom(code, payload) {
+  const msg = JSON.stringify(payload);
   for (const client of wss.clients) {
     if (client.readyState === 1 && client.roomCode === code) client.send(msg);
   }
 }
+function broadcastChat(code, name, color, text, system) {
+  broadcastToRoom(code, { type: 'chat_message', name, color, text, system: !!system, ts: Date.now() });
+}
+function broadcastAvatar(code, playerId, avatar) {
+  broadcastToRoom(code, { type: 'avatar', playerId, avatar });
+}
 
-function addPlayerToRoom(ws, code, name) {
+function createPublicRoom(code) {
+  const engine = createEngine({
+    onSystem: (text) => broadcastChat(code, 'Sistema', SYSTEM_COLOR, text, true),
+    onChat: (payload) => broadcastChat(code, payload.name, payload.color, payload.text, false),
+  });
+  return { isPublic: true, engine };
+}
+
+function addPlayerToPublicRoom(ws, code, name, classId, avatar, weapon, attackMode) {
   const room = rooms[code];
   const id = 'p' + Math.random().toString(36).slice(2, 9);
-  const color = COLORS[room.colorIdx % COLORS.length];
-  room.colorIdx += 1;
-
-  room.players[id] = {
-    id,
-    x: ARENA_W / 2 + (Math.random() - 0.5) * 100,
-    y: ARENA_H / 2 + (Math.random() - 0.5) * 100,
-    hp: PLAYER_MAX_HP,
-    color,
-    name: (name && name.slice(0, 16)) || 'Player-' + id.slice(1, 4),
-    input: { up: false, down: false, left: false, right: false },
-    lastShot: 0,
-    lastMelee: 0,
-    alive: true,
-    respawnAt: 0,
-  };
-
   ws.roomCode = code;
   ws.playerId = id;
-  ws.send(JSON.stringify({ type: 'joined', id, color, room: code }));
+  const player = room.engine.addPlayer({ id, name, classId, avatar, weapon, attackMode });
+
+  ws.send(JSON.stringify({ type: 'joined', id, color: player.color, room: code, classId: player.classId, isPublic: true, mode: 'server' }));
+
+  for (const pid of room.engine.getPlayerIds()) {
+    if (pid !== id) {
+      const pl = room.engine.getPlayer(pid);
+      if (pl && pl.avatar) ws.send(JSON.stringify({ type: 'avatar', playerId: pid, avatar: pl.avatar }));
+    }
+  }
+  if (player.avatar) broadcastAvatar(code, id, player.avatar);
+}
+
+function removePlayerFromPublicRoom(ws) {
+  const code = ws.roomCode;
+  const room = rooms[code];
+  if (room) {
+    const empty = room.engine.removePlayer(ws.playerId);
+    if (empty) delete rooms[code];
+  }
+  ws.roomCode = null;
+  ws.playerId = null;
+}
+
+function sendRoomList(ws) {
+  const list = Object.entries(rooms)
+    .filter(([, r]) => r.isPublic)
+    .map(([code, r]) => {
+      const s = r.engine.getSummary();
+      return { code, players: s.players, wave: s.wave, phase: s.phase };
+    });
+  ws.send(JSON.stringify({ type: 'room_list', rooms: list }));
 }
 
 wss.on('connection', (ws) => {
+  ws.peerId = 'peer' + Math.random().toString(36).slice(2, 10);
   ws.roomCode = null;
   ws.playerId = null;
 
@@ -242,41 +97,112 @@ wss.on('connection', (ws) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
 
+    // ---------- Salas públicas: jogo roda aqui no servidor (como sempre) ----------
     if (msg.type === 'create') {
       const code = generateRoomCode();
-      rooms[code] = createRoom();
-      addPlayerToRoom(ws, code, msg.name);
+      if (msg.isPublic) {
+        rooms[code] = createPublicRoom(code);
+        addPlayerToPublicRoom(ws, code, msg.name, msg.classId, msg.avatar, msg.weapon, msg.attackMode);
+      } else {
+        // sala privada: o CRIADOR vira o host. Servidor só registra o código
+        // pra sinalização — nenhum jogo roda aqui.
+        p2pRooms[code] = { hostWs: ws };
+        ws.isP2pHost = true;
+        ws.roomCode = code;
+        ws.send(JSON.stringify({ type: 'p2p_host_ready', room: code, hostName: msg.name, hostClassId: msg.classId, hostAvatar: msg.avatar }));
+      }
 
     } else if (msg.type === 'join') {
       const code = (msg.room || '').toUpperCase().trim();
-      if (!rooms[code]) {
+      if (rooms[code]) {
+        addPlayerToPublicRoom(ws, code, msg.name, msg.classId, msg.avatar, msg.weapon, msg.attackMode);
+      } else if (p2pRooms[code]) {
+        // sala privada: pede pro host abrir uma conexão WebRTC direta com quem entrou
+        const host = p2pRooms[code].hostWs;
+        if (!host || host.readyState !== 1) {
+          ws.send(JSON.stringify({ type: 'error', message: 'O host dessa sala não está mais conectado.' }));
+          return;
+        }
+        ws.roomCode = code;
+        ws.send(JSON.stringify({ type: 'p2p_wait_host', room: code }));
+        host.send(JSON.stringify({
+          type: 'p2p_peer_join', peerId: ws.peerId, name: msg.name, classId: msg.classId, avatar: msg.avatar,
+          weapon: msg.weapon, attackMode: msg.attackMode,
+        }));
+      } else {
         ws.send(JSON.stringify({ type: 'error', message: 'Sala não encontrada. Confira o código.' }));
-        return;
       }
-      addPlayerToRoom(ws, code, msg.name);
+
+    } else if (msg.type === 'leave') {
+      if (rooms[ws.roomCode]) {
+        removePlayerFromPublicRoom(ws);
+      } else if (p2pRooms[ws.roomCode]) {
+        if (ws.isP2pHost) delete p2pRooms[ws.roomCode];
+        ws.roomCode = null;
+      }
+      ws.send(JSON.stringify({ type: 'left' }));
+
+    } else if (msg.type === 'list_rooms') {
+      sendRoomList(ws);
 
     } else if (msg.type === 'input') {
-      if (ws.roomCode && rooms[ws.roomCode] && rooms[ws.roomCode].players[ws.playerId]) {
-        rooms[ws.roomCode].players[ws.playerId].input = {
-          up: !!msg.up, down: !!msg.down, left: !!msg.left, right: !!msg.right,
-        };
+      const room = rooms[ws.roomCode];
+      if (room) room.engine.setInput(ws.playerId, msg);
+
+    } else if (msg.type === 'choose_upgrade') {
+      const room = rooms[ws.roomCode];
+      if (room) room.engine.chooseUpgrade(ws.playerId, msg.upgradeId);
+
+    } else if (msg.type === 'chat') {
+      const room = rooms[ws.roomCode];
+      if (room) room.engine.sendChat(ws.playerId, msg.text);
+
+    } else if (msg.type === 'admin_login') {
+      const room = rooms[ws.roomCode];
+      if (room) {
+        const ok = room.engine.loginAdmin(ws.playerId, msg.username, msg.password);
+        ws.send(JSON.stringify({ type: 'admin_login_result', success: ok }));
+      }
+
+    } else if (msg.type === 'admin_spawn') {
+      const room = rooms[ws.roomCode];
+      if (room) room.engine.adminSpawnEnemy(ws.playerId, msg.typeId);
+
+    } else if (msg.type === 'admin_upgrade') {
+      const room = rooms[ws.roomCode];
+      if (room) room.engine.adminGiveUpgrade(ws.playerId, msg.upgradeId);
+
+    } else if (msg.type === 'admin_skip') {
+      const room = rooms[ws.roomCode];
+      if (room) room.engine.adminSkipPhase(ws.playerId);
+
+    // ---------- Sinalização WebRTC (só isso passa pelo servidor em salas privadas) ----------
+    } else if (msg.type === 'p2p_signal') {
+      // encaminha oferta/resposta/ICE candidates entre o host e um peer específico,
+      // sem o servidor entender ou guardar o conteúdo
+      for (const client of wss.clients) {
+        if (client.peerId === msg.targetPeerId) {
+          client.send(JSON.stringify({ type: 'p2p_signal', fromPeerId: ws.peerId, data: msg.data }));
+          break;
+        }
       }
     }
   });
 
   ws.on('close', () => {
-    if (ws.roomCode && rooms[ws.roomCode]) {
-      delete rooms[ws.roomCode].players[ws.playerId];
-      if (Object.keys(rooms[ws.roomCode].players).length === 0) {
-        delete rooms[ws.roomCode]; // sala vazia é removida
-      }
+    if (rooms[ws.roomCode]) {
+      removePlayerFromPublicRoom(ws);
+    } else if (ws.isP2pHost && p2pRooms[ws.roomCode]) {
+      delete p2pRooms[ws.roomCode];
     }
   });
 });
 
 setInterval(() => {
   for (const code of Object.keys(rooms)) {
-    tickRoom(rooms[code], code);
+    const room = rooms[code];
+    const state = room.engine.tick();
+    broadcastToRoom(code, { type: 'state', room: code, ...state });
   }
 }, TICK_MS);
 
